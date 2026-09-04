@@ -17,42 +17,14 @@ export default function Navbar() {
     async function checkAuthAndMerchant() {
       const { data } = await supabaseClient.auth.getUser();
       setUserEmail(data.user?.email || null);
-
-      if (data.user) {
-        if (data.user.user_metadata?.is_merchant === true) {
-          setIsMerchant(true);
-        } else {
-          const { data: cust } = await supabaseClient
-            .from('customers')
-            .select('is_merchant')
-            .eq('user_id', data.user.id)
-            .single();
-
-          setIsMerchant(!!(cust as any)?.is_merchant);
-        }
-      } else {
-        setIsMerchant(false);
-      }
+      setIsMerchant(data.user?.user_metadata?.is_merchant === true);
     }
 
     checkAuthAndMerchant();
 
     const { data: listener } = supabaseClient.auth.onAuthStateChange(async (_event, session) => {
       setUserEmail(session?.user?.email || null);
-      if (session?.user) {
-        if (session.user.user_metadata?.is_merchant === true) {
-          setIsMerchant(true);
-        } else {
-          const { data: cust } = await supabaseClient
-            .from('customers')
-            .select('is_merchant')
-            .eq('user_id', session.user.id)
-            .single();
-          setIsMerchant(!!(cust as any)?.is_merchant);
-        }
-      } else {
-        setIsMerchant(false);
-      }
+      setIsMerchant(session?.user?.user_metadata?.is_merchant === true);
     });
 
     return () => {

@@ -7,6 +7,7 @@ import { supabaseClient } from '@/lib/supabase/client';
 
 export default function SignupPage() {
   const router = useRouter();
+  const [role, setRole] = useState<'customer' | 'merchant'>('customer');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,12 +19,17 @@ export default function SignupPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Sign up Supabase Auth User
+    const isMerchant = role === 'merchant';
+
+    // 1. Sign up Supabase Auth User with is_merchant in metadata
     const { data: authData, error: authError } = await supabaseClient.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName }
+        data: {
+          full_name: fullName,
+          is_merchant: isMerchant,
+        }
       }
     });
 
@@ -38,14 +44,18 @@ export default function SignupPage() {
       .from('customers')
       .insert({
         user_id: authData.user.id,
-        name: fullName
+        name: fullName,
       });
 
     if (custError) {
       console.error('Error creating customer row:', custError);
     }
 
-    router.push('/catalog');
+    if (isMerchant) {
+      router.push('/audit');
+    } else {
+      router.push('/catalog');
+    }
     router.refresh();
   };
 
@@ -72,6 +82,36 @@ export default function SignupPage() {
 
         <form className="mt-8 space-y-5" onSubmit={handleSignup}>
           <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                Account Type
+              </label>
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setRole('customer')}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${
+                    role === 'customer'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🛒 Customer Account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('merchant')}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${
+                    role === 'merchant'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📊 Merchant Account
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
                 Full Name

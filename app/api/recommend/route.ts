@@ -51,18 +51,21 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Return first candidate at root level for backwards-compatibility alongside full array
-    const primary = loggedRecommendations[0];
+    // Filter customer-facing response to ONLY include valid, passed recommendations
+    const customerRecommendations = loggedRecommendations.filter(r => r.bound_check_passed && r.candidate);
+
+    // Return primary candidate if available, otherwise null
+    const primary = customerRecommendations[0] || null;
 
     return NextResponse.json({
-      recommendations: loggedRecommendations,
+      recommendations: customerRecommendations,
       // Backward compatibility fields
-      candidate: primary.candidate,
-      signal_type: primary.signal_type,
-      reasoning: primary.reasoning,
-      bound_check_passed: primary.bound_check_passed,
-      bound_check_rule: primary.bound_check_rule,
-      decision_id: primary.decision_id
+      candidate: primary ? primary.candidate : null,
+      signal_type: primary ? primary.signal_type : null,
+      reasoning: primary ? primary.reasoning : '',
+      bound_check_passed: primary ? primary.bound_check_passed : false,
+      bound_check_rule: primary ? primary.bound_check_rule : '',
+      decision_id: primary ? primary.decision_id : null
     });
   } catch (err: any) {
     console.error('API /api/recommend Error:', err);

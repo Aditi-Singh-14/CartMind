@@ -14,8 +14,14 @@ export default function CatalogPage() {
 
   const { addToCart, cart } = useCart();
 
+  const [isMerchant, setIsMerchant] = useState(false);
+
   useEffect(() => {
-    async function fetchProducts() {
+    async function fetchProductsAndRole() {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const user = authData.user;
+      setIsMerchant(user?.user_metadata?.is_merchant === true);
+
       const { data, error } = await supabaseClient
         .from('products')
         .select('*')
@@ -29,7 +35,7 @@ export default function CatalogPage() {
       }
       setLoading(false);
     }
-    fetchProducts();
+    fetchProductsAndRole();
   }, []);
 
   const handleAddToCart = (product: Product) => {
@@ -101,7 +107,7 @@ export default function CatalogPage() {
                       {product.category}
                     </span>
 
-                    {product.margin_flag && (
+                    {isMerchant && product.margin_flag && (
                       <span className="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                         High Margin
                       </span>

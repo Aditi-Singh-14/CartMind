@@ -1,9 +1,16 @@
 'use client';
 
+import Script from 'next/script';
 import { useState, useEffect } from 'react';
 import { useCart } from '@/context/CartContext';
 import { supabaseClient } from '@/lib/supabase/client';
 import VoiceInput from '@/components/VoiceInput';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 export default function CheckoutPage() {
   const { cart, addToCart, removeFromCart, clearCart, cartTotalPaise } = useCart();
@@ -14,6 +21,14 @@ export default function CheckoutPage() {
   const [orderConfirmation, setOrderConfirmation] = useState<any | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Shipping Address Form State
+  const [shippingAddress, setShippingAddress] = useState({
+    fullName: '',
+    addressLine: '123 MG Road, Suite 400',
+    city: 'Bengaluru',
+    pincode: '560001'
+  });
 
   useEffect(() => {
     async function fetchCustomer() {
@@ -35,8 +50,6 @@ export default function CheckoutPage() {
 
   // Auto-fetch recommendations whenever cart changes (debounced by 400ms)
   useEffect(() => {
-    if (!customer) return;
-
     if (cart.length === 0) {
       setRecList([]);
       return;
@@ -47,12 +60,30 @@ export default function CheckoutPage() {
       setError(null);
 
       try {
+        let custId = customer?.id;
+        if (!custId) {
+          const { data: authData } = await supabaseClient.auth.getUser();
+          if (authData.user) {
+            const { data: cust } = await supabaseClient
+              .from('customers')
+              .select('id, name')
+              .eq('user_id', authData.user.id)
+              .single();
+            if (cust) {
+              setCustomer(cust);
+              custId = cust.id;
+            }
+          }
+        }
+
+        if (!custId) return;
+
         const cartProductIds = cart.map((item) => item.product.id);
         const res = await fetch('/api/recommend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            customer_id: customer.id,
+            customer_id: custId,
             cart: cartProductIds,
           }),
         });
@@ -77,6 +108,170 @@ export default function CheckoutPage() {
     return () => clearTimeout(timer);
   }, [cart, customer]);
 
+  // Open Razorpay hosted checkout modal with order details
+  const triggerRazorpayCheckout = (orderData: any, decisionId: string) => {
+    const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_TXglYk7R8hvP5j';
+
+    const options = {
+      key: key,
+      amount: orderData.total_amount,
+      currency: 'INR',
+      name: 'CartMind Store',
+      description: 'AI Cart Optimization Checkout',
+      order_id: orderData.razorpay_order_id,
+      prefill: {
+        name: shippingAddress.fullName || customer?.name || 'Customer',
+        contact: '9999999999'
+      },
+      theme: {
+        color: '#2563eb'
+      },
+      handler: async function (response: any) {
+        // Payment success callback
+        try {
+          await fetch('/api/pay-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: orderData.razorpay_order_id,
+              decision_id: decisionId,
+              status: 'payment_completed',
+              payment_id: response.razorpay_payment_id,
+              shipping_address: shippingAddress
+            })
+          });
+
+          setOrderConfirmation({
+            ...orderData,
+            final_status: 'payment_completed',
+            payment_id: response.razorpay_payment_id,
+            shipping_address: shippingAddress
+          });
+          clearCart();
+          setRecList([]);
+        } catch (e: any) {
+          console.error('Error updating payment status:', e);
+        } finally {
+          setActionLoadingId(null);
+        }
+      },
+      modal: {
+        ondismiss: async function () {
+          // User closed checkout without completing payment
+          try {
+            await fetch('/api/pay-status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: orderData.razorpay_order_id,
+                decision_id: decisionId,
+                status: 'payment_failed',
+                shipping_address: shippingAddress
+              })
+            });
+
+            setError('Payment cancelled or closed. Order saved as payment_failed (retry available).');
+          } catch (e: any) {
+            console.error('Error updating payment failure:', e);
+          } finally {
+            setActionLoadingId(null);
+          }
+        }
+      }
+    };
+
+    if (window.Razorpay) {
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', async function (response: any) {
+        await fetch('/api/pay-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.razorpay_order_id,
+            decision_id: decisionId,
+            status: 'payment_failed',
+            shipping_address: shippingAddress
+          })
+        });
+        setError(`Payment failed: ${response.error?.description || 'Transaction declined'}`);
+        setActionLoadingId(null);
+      });
+      rzp.open();
+    } else {
+      // Fallback if Razorpay SDK fails to load
+      setOrderConfirmation(orderData);
+      clearCart();
+      setRecList([]);
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDirectCheckout = async () => {
+    if (cart.length === 0) return;
+
+    let custId = customer?.id;
+    if (!custId) {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      if (authData.user) {
+        const { data: cust } = await supabaseClient
+          .from('customers')
+          .select('id, name')
+          .eq('user_id', authData.user.id)
+          .single();
+        if (cust) {
+          setCustomer(cust);
+          custId = cust.id;
+        }
+      }
+    }
+
+    if (!custId) {
+      setError('Customer account not found. Please log in again.');
+      return;
+    }
+
+    setActionLoadingId('direct_checkout');
+    setError(null);
+
+    try {
+      // Create a dummy/direct recommendation decision record in Supabase agent_decisions
+      const cartProductIds = cart.map((item) => item.product.id);
+      const recRes = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: custId,
+          cart: cartProductIds,
+        }),
+      });
+
+      const recData = await recRes.json();
+      const decisionId = recData.decision_id || (recData.recommendations && recData.recommendations[0]?.decision_id);
+
+      if (!decisionId) {
+        throw new Error('Failed to initialize checkout session decision.');
+      }
+
+      // Approve decision to create Razorpay MCP order
+      const res = await fetch(`/api/decisions/${decisionId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: 'approved' }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Checkout process failed.');
+      }
+
+      // Launch Razorpay Hosted Checkout interface
+      triggerRazorpayCheckout(data, decisionId);
+    } catch (err: any) {
+      setError(err.message);
+      setActionLoadingId(null);
+    }
+  };
+
   const handleRespond = async (decisionId: string, response: 'approved' | 'rejected') => {
     if (!decisionId) return;
 
@@ -96,16 +291,14 @@ export default function CheckoutPage() {
       }
 
       if (response === 'approved') {
-        setOrderConfirmation(data);
-        clearCart();
-        setRecList([]);
+        triggerRazorpayCheckout(data, decisionId);
       } else {
         // Remove rejected item card from active view
         setRecList((prev) => prev.filter((item) => item.decision_id !== decisionId));
+        setActionLoadingId(null);
       }
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setActionLoadingId(null);
     }
   };
@@ -260,16 +453,75 @@ export default function CheckoutPage() {
 
         {/* Order Summary & Auto AI Recommendation Cards */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Order Summary</h3>
 
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+            {/* Shipping Address Inputs */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Shipping Details</h4>
+              <div>
+                <input
+                  type="text"
+                  placeholder="Full Name"
+                  value={shippingAddress.fullName || customer?.name || ''}
+                  onChange={(e) => setShippingAddress(prev => ({ ...prev, fullName: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <input
+                  type="text"
+                  placeholder="Address Line"
+                  value={shippingAddress.addressLine}
+                  onChange={(e) => setShippingAddress(prev => ({ ...prev, addressLine: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="City"
+                  value={shippingAddress.city}
+                  onChange={(e) => setShippingAddress(prev => ({ ...prev, city: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Pincode"
+                  value={shippingAddress.pincode}
+                  onChange={(e) => setShippingAddress(prev => ({ ...prev, pincode: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
               <span className="text-xs text-slate-500 font-medium">Subtotal</span>
               <span className="text-base font-black text-slate-900">
                 ₹{(cartTotalPaise / 100).toLocaleString('en-IN')}
               </span>
             </div>
+
+            <button
+              onClick={handleDirectCheckout}
+              disabled={cart.length === 0 || !!actionLoadingId}
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {actionLoadingId === 'direct_checkout' ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Opening Razorpay Checkout...</span>
+                </>
+              ) : (
+                <span>Proceed to Checkout &amp; Pay via Razorpay</span>
+              )}
+            </button>
           </div>
+
+          <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
 
           {/* AI Recommendation Header */}
           {cart.length > 0 && (
@@ -341,24 +593,14 @@ export default function CheckoutPage() {
                         </p>
                       </div>
 
-                      <div className="mt-2 text-[10px] font-mono text-slate-500 truncate">
-                        Rule: {rec.bound_check_rule}
-                      </div>
-
                       <div className="mt-4 flex gap-2.5">
-                        {rec.bound_check_passed ? (
-                          <button
-                            onClick={() => handleRespond(rec.decision_id, 'approved')}
-                            disabled={!!actionLoadingId}
-                            className="flex-1 rounded-lg bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 shadow-xs disabled:opacity-50 transition"
-                          >
-                            {isLoadingThis ? 'Processing...' : 'Approve & Pay via Razorpay'}
-                          </button>
-                        ) : (
-                          <div className="flex-1 rounded-lg bg-amber-50 border border-amber-200 p-2 text-center text-[11px] font-bold text-amber-700">
-                            Bound check failed.
-                          </div>
-                        )}
+                        <button
+                          onClick={() => handleRespond(rec.decision_id, 'approved')}
+                          disabled={!!actionLoadingId}
+                          className="flex-1 rounded-lg bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 shadow-xs disabled:opacity-50 transition"
+                        >
+                          {isLoadingThis ? 'Processing...' : 'Approve & Pay via Razorpay'}
+                        </button>
 
                         <button
                           onClick={() => handleRespond(rec.decision_id, 'rejected')}

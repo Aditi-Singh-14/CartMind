@@ -24,17 +24,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized: Authentication required' }, { status: 401 });
     }
 
-    // Check if user is marked as merchant in metadata or in linked customers row
-    const isMerchantMetadata = user.user_metadata?.is_merchant === true;
-
-    const { data: customerRows } = await supabaseAdmin
-      .from('customers')
-      .select('is_merchant')
-      .eq('user_id', user.id);
-
-    const isMerchantCustomer = customerRows?.some((c) => (c as any).is_merchant === true);
-
-    const isMerchant = isMerchantMetadata || isMerchantCustomer;
+    // Check if authenticated user has is_merchant = true in their metadata
+    const isMerchant = user.user_metadata?.is_merchant === true;
 
     if (!isMerchant) {
       return NextResponse.json(
