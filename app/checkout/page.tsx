@@ -20,6 +20,9 @@ export default function CheckoutPage() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [orderConfirmation, setOrderConfirmation] = useState<any | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [agentReasoningSteps, setAgentReasoningSteps] = useState<Array<{ step: string; detail: string }>>([]);
+  const [textQueryInput, setTextQueryInput] = useState<string>('');
+  const [isAgentExecuting, setIsAgentExecuting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Shipping Address Form State
@@ -109,10 +112,10 @@ export default function CheckoutPage() {
   }, [cart, customer]);
 
   // Open Razorpay hosted checkout modal with order details
-  const triggerRazorpayCheckout = (orderData: any, decisionId: string) => {
+  const triggerRazorpayCheckout = (orderData: any, decisionId: string, preferredMethod?: string) => {
     const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_TXglYk7R8hvP5j';
 
-    const options = {
+    const options: any = {
       key: key,
       amount: orderData.total_amount,
       currency: 'INR',
@@ -121,8 +124,20 @@ export default function CheckoutPage() {
       order_id: orderData.razorpay_order_id,
       prefill: {
         name: shippingAddress.fullName || customer?.name || 'Customer',
-        contact: '9999999999'
+        contact: '9999999999',
+        method: preferredMethod === 'netbanking' ? 'netbanking' : preferredMethod === 'upi' ? 'upi' : preferredMethod === 'card' ? 'card' : undefined
       },
+      config: preferredMethod && preferredMethod !== 'default' ? {
+        display: {
+          blocks: {
+            preferred: {
+              name: `Pay using ${preferredMethod.toUpperCase()}`,
+              instruments: [{ method: preferredMethod }]
+            }
+          },
+          sequence: ['block.preferred']
+        }
+      } : undefined,
       theme: {
         color: '#2563eb'
       },
@@ -206,7 +221,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleDirectCheckout = async () => {
+  const handleDirectCheckout = async (preferredMethod?: string) => {
     if (cart.length === 0) return;
 
     let custId = customer?.id;
@@ -265,7 +280,7 @@ export default function CheckoutPage() {
       }
 
       // Launch Razorpay Hosted Checkout interface
-      triggerRazorpayCheckout(data, decisionId);
+      triggerRazorpayCheckout(data, decisionId, preferredMethod);
     } catch (err: any) {
       setError(err.message);
       setActionLoadingId(null);
@@ -303,56 +318,141 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleVoiceTranscript = async (transcript: string) => {
+  const handleAgentUtterance = async (transcript: string) => {
+    if (!transcript || !transcript.trim()) return;
+
     try {
-      setVoiceFeedback(`Processing: "${transcript}"...`);
+      setIsAgentExecuting(true);
+      setVoiceFeedback(`🤖 Agent reasoning for: "${transcript.trim()}"...`);
+      setAgentReasoningSteps([]);
+
+      const cartProductIds = cart.map((item) => item.product.id);
+
       const res = await fetch('/api/voice-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({
+          transcript: transcript.trim(),
+          cart: cartProductIds,
+          customer_id: customer?.id
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to parse voice intent');
+        throw new Error(data.error || 'Failed to execute agent intent tools');
+      }
+
+      // Store reasoning steps for live UI visibility
+      if (Array.isArray(data.reasoning_steps)) {
+        setAgentReasoningSteps(data.reasoning_steps);
       }
 
       setVoiceFeedback(data.feedback_text);
 
+      // Act on tool execution results
       if (data.intent_type === 'add_to_cart' && data.matched_product) {
         addToCart(data.matched_product);
+      } else if (data.intent_type === 'remove_from_cart' && data.matched_product) {
+        removeFromCart(data.matched_product.id);
       } else if (data.intent_type === 'clear_cart') {
         clearCart();
+      } else if (data.intent_type === 'checkout') {
+        handleDirectCheckout(data.payment_method_preference);
       }
 
-      setTimeout(() => setVoiceFeedback(null), 4000);
+      setTextQueryInput('');
     } catch (err: any) {
-      setError(`Voice processing error: ${err.message}`);
-      setVoiceFeedback(null);
+      setError(`Agent processing error: ${err.message}`);
+    } finally {
+      setIsAgentExecuting(false);
     }
   };
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
-            Cart Checkout
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
+            <span>Cart Checkout</span>
+            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-black text-blue-700 uppercase tracking-wide border border-blue-200">
+              ⚡ LLM Agentic Tooling
+            </span>
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            Review cart items, speak voice commands, &amp; view real-time AI cart optimizations.
+            Review cart, execute open-ended voice/text agent commands in English or Hindi, &amp; trigger Razorpay checkout.
           </p>
         </div>
 
-        {/* Voice Input Component */}
-        <div className="sm:self-end">
-          <VoiceInput onTranscriptComplete={handleVoiceTranscript} disabled={recLoading || !!actionLoadingId} />
+        {/* Voice Input Component with Hindi support */}
+        <div className="md:self-end">
+          <VoiceInput onTranscriptComplete={handleAgentUtterance} disabled={recLoading || !!actionLoadingId || isAgentExecuting} />
         </div>
       </div>
 
+      {/* Open-ended Text Agent Command Box */}
+      <div className="mt-6 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/60 p-4 shadow-sm">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAgentUtterance(textQueryInput);
+          }}
+          className="flex flex-col gap-3 sm:flex-row sm:items-center"
+        >
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 text-sm">
+              🤖
+            </span>
+            <input
+              type="text"
+              placeholder="Ask agent: 'Recommend me skincare with niacinamide' or 'Netbanking se checkout karo'..."
+              value={textQueryInput}
+              onChange={(e) => setTextQueryInput(e.target.value)}
+              disabled={isAgentExecuting || recLoading}
+              className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-4 py-2.5 text-xs text-slate-900 shadow-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!textQueryInput.trim() || isAgentExecuting}
+            className="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-extrabold text-white hover:bg-blue-700 shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+          >
+            {isAgentExecuting ? 'Executing Tools...' : 'Ask AI Agent'}
+          </button>
+        </form>
+
+        {/* Real-time Agent Reasoning Trace Box */}
+        {agentReasoningSteps.length > 0 && (
+          <div className="mt-4 rounded-xl border border-indigo-200 bg-white p-3.5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-900 border-b border-slate-100 pb-2">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <span>Agent Tool Execution Trace</span>
+              </span>
+              <span className="font-mono text-[10px] text-slate-400">
+                {agentReasoningSteps.length} step(s)
+              </span>
+            </div>
+
+            <div className="space-y-1.5 font-mono text-[11px]">
+              {agentReasoningSteps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="font-bold text-blue-600">→</span>
+                  <div>
+                    <span className="font-bold text-slate-900">{step.step}:</span>{' '}
+                    <span className="text-slate-600">{step.detail}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {voiceFeedback && (
-        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-center text-xs font-semibold text-blue-700 animate-pulse">
-          🗣️ {voiceFeedback}
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3.5 text-center text-xs font-semibold text-blue-700 animate-fade-in flex items-center justify-center gap-2">
+          <span>🗣️</span>
+          <span>{voiceFeedback}</span>
         </div>
       )}
 
@@ -379,20 +479,11 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3 border-t border-emerald-200 pt-4">
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 border-t border-emerald-200 pt-4">
             <div className="rounded-lg bg-white p-4 border border-slate-200 shadow-xs">
               <span className="text-xs text-slate-500 font-medium">Total Order Amount</span>
               <p className="mt-1 text-xl font-extrabold text-slate-900">
                 ₹{orderConfirmation.total_amount_inr}
-              </p>
-            </div>
-
-            <div className="rounded-lg bg-blue-50 p-4 border border-blue-200 shadow-xs">
-              <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                Added Revenue Delta (Upsell)
-              </span>
-              <p className="mt-1 text-2xl font-black text-amber-600">
-                +₹{orderConfirmation.revenue_delta_inr}
               </p>
             </div>
 
@@ -413,7 +504,7 @@ export default function CheckoutPage() {
 
           {cart.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 shadow-xs">
-              Your cart is empty. Speak &quot;add running shoes&quot; or browse the Catalog.
+              Your cart is empty. Try typing or speaking: &quot;recommend me skincare with niacinamide&quot; or &quot;skincare dikhao&quot;.
             </div>
           ) : (
             <div className="space-y-3">
@@ -503,7 +594,7 @@ export default function CheckoutPage() {
             </div>
 
             <button
-              onClick={handleDirectCheckout}
+              onClick={() => handleDirectCheckout()}
               disabled={cart.length === 0 || !!actionLoadingId}
               className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -567,15 +658,6 @@ export default function CheckoutPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded border border-blue-100">
                         Suggestion #{index + 1}
-                      </span>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold ${
-                          rec.signal_type === 'replenishment'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        Signal: {rec.signal_type}
                       </span>
                     </div>
 

@@ -1,16 +1,1 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/pay-status/route": "app/api/pay-status/route.js",
-  "/api/recommend/route": "app/api/recommend/route.js",
-  "/api/decisions/[id]/respond/route": "app/api/decisions/[id]/respond/route.js",
-  "/audit/page": "app/audit/page.js",
-  "/catalog/page": "app/catalog/page.js",
-  "/checkout/page": "app/checkout/page.js",
-  "/login/page": "app/login/page.js",
-  "/api/voice-intent/route": "app/api/voice-intent/route.js",
-  "/page": "app/page.js",
-  "/orders/page": "app/orders/page.js",
-  "/signup/page": "app/signup/page.js",
-  "/api/audit/route": "app/api/audit/route.js",
-  "/api/catalog/route": "app/api/catalog/route.js"
-}
+{}
