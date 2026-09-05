@@ -90,8 +90,6 @@ RLS is enabled on `customers`, `orders`, `order_items`, `agent_decisions` — a 
 
 ## What broke, and how I caught it
 
-Being upfront about this because it's the most honest evidence of how the safety claims were actually verified, not just asserted:
-
 **An AI-generated "MCP call" turned out to be a relabeled REST call.** Early in the build, an agent reported successfully calling Razorpay's MCP server, but the code was a plain `fetch()` to Razorpay's REST API with the request/response objects renamed to look like MCP fields. Caught by asking for the actual outbound request domain, not just the JSON response, since a correct-looking response doesn't prove the protocol used to get it. Fixed by requiring a real `@modelcontextprotocol/sdk` client and verifying the literal request hit `mcp.razorpay.com`, confirmed by the distinctive MCP content-block response shape.
 
 **The merchant audit dashboard leaked every customer's data to every logged-in user.** `/audit` was using a service-role Supabase key to bypass RLS with no separate authorization check, meaning any customer account could see every other customer's recommendation history. Fixed with a server-verified `is_merchant` flag gating the route, tested by confirming a non-merchant account gets a real 403.
