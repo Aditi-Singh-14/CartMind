@@ -7,8 +7,8 @@ Track 01: AI Growth & Agentic Commerce
 ## Links
  
 - **Live app**: https://cart-mind-sepia.vercel.app
-- **GitHub repo**: [PASTE YOUR REPO URL]
-- **Demo video**: [PASTE YOUR VIDEO LINK]
+- **GitHub repo**: https://github.com/Aditi-Singh-14/CartMind
+
 ## What it solves
 
 Merchants want AI agents to grow revenue, but "let an AI touch checkout" is scary without guardrails. CartMind is an AI shopping agent that looks at a customer's cart and purchase history, proposes a bounded, explainable upsell or replenishment reminder, gets explicit human approval, and only then executes a real payment through **Razorpay's own MCP server** — not a REST wrapper pretending to be agentic commerce.
@@ -122,4 +122,3 @@ Required environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABAS
 | Recommendation card with bound check | Real Razorpay payment |
 |---|---|
 | ![Recommendation](assets/AI recommedation for cart with reason for upsell.png) | ![Payment](assets/Razorpay payment gateway.png) |
- 
