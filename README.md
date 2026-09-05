@@ -117,7 +117,7 @@ Required environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABAS
  
 | Conversational checkout (Hindi) | Merchant Audit dashboard |
 |---|---|
-| ![Hindi_checkout](assets/AI%20conversational%20checkout%20in%20Hindi.png) | ![Audit_dashboard](assets/Merchant Revenue Dashboard.png) |
+| ![Hindi_checkout](assets/AI%20conversational%20checkout%20in%20Hindi.png) | ![Audit_dashboard](assets/Merchant%20Revenue%20Dashboard.png) |
  
 | Recommendation card with bound check | Real Razorpay payment |
 |---|---|
