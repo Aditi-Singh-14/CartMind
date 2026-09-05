@@ -1,8 +1,7 @@
 {
-  "/checkout/page": "app/checkout/page.js",
-  "/audit/page": "app/audit/page.js",
   "/catalog/page": "app/catalog/page.js",
-  "/api/recommend/route": "app/api/recommend/route.js",
-  "/login/page": "app/login/page.js",
-  "/signup/page": "app/signup/page.js"
+  "/api/voice-intent/route": "app/api/voice-intent/route.js",
+  "/checkout/page": "app/checkout/page.js",
+  "/api/checkout/route": "app/api/checkout/route.js",
+  "/api/pay-status/route": "app/api/pay-status/route.js"
 }

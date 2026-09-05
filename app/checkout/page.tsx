@@ -315,6 +315,29 @@ export default function CheckoutPage() {
         clearCart();
       } else if (data.intent_type === 'checkout') {
         handleDirectCheckout(data.payment_method_preference);
+      } else if (data.intent_type === 'ask_recommendation') {
+        // Agent triggered a recommendations fetch — call /api/recommend directly
+        setRecLoading(true);
+        try {
+          const cartProductIds = cart.map((item) => item.product.id);
+          const recRes = await fetch('/api/recommend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cart: cartProductIds }),
+          });
+          if (recRes.ok) {
+            const recData = await recRes.json();
+            if (Array.isArray(recData.recommendations)) {
+              setRecList(recData.recommendations);
+            } else if (recData.candidate) {
+              setRecList([recData]);
+            }
+          }
+        } catch (recErr) {
+          console.error('Agent-triggered recommendation fetch error:', recErr);
+        } finally {
+          setRecLoading(false);
+        }
       }
 
       setTextQueryInput('');
