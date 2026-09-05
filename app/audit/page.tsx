@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 export default function AuditPage() {
   const [decisions, setDecisions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ordersTotalPaise, setOrdersTotalPaise] = useState(0);
 
   const [isMerchant, setIsMerchant] = useState<boolean | null>(null);
 
@@ -32,6 +33,12 @@ export default function AuditPage() {
       }
     }
     fetchAuditData();
+
+    // Fetch orders total for revenue stat cards
+    fetch('/api/audit/orders-total')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.total_amount_paise != null) setOrdersTotalPaise(d.total_amount_paise); })
+      .catch(() => {});
   }, []);
 
   const totalDecisions = decisions.length;
@@ -41,6 +48,11 @@ export default function AuditPage() {
     (sum, d) => sum + (d.user_response === 'approved' ? Number(d.revenue_delta || 0) : 0),
     0
   );
+
+  const upsellPct =
+    ordersTotalPaise > 0
+      ? Math.round((totalRevenuePaise / ordersTotalPaise) * 100)
+      : 0;
 
   if (!loading && isMerchant === false) {
     return (
@@ -84,7 +96,7 @@ export default function AuditPage() {
       </div>
 
       {/* Metric Cards Grid */}
-      <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Total Agent Decisions
@@ -120,6 +132,28 @@ export default function AuditPage() {
           <p className="mt-2 text-3xl font-extrabold text-rose-600">
             {boundInterceptions}
           </p>
+        </div>
+
+        {/* New: Total Revenue */}
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-xs">
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+            Total Revenue
+          </span>
+          <p className="mt-2 text-3xl font-black text-emerald-700">
+            ₹{(ordersTotalPaise / 100).toLocaleString('en-IN')}
+          </p>
+          <p className="mt-1 text-[10px] text-slate-400">orders: created + paid</p>
+        </div>
+
+        {/* New: % From AI Upsells */}
+        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-5 shadow-xs">
+          <span className="text-xs font-bold uppercase tracking-wider text-violet-700">
+            % From AI Upsells
+          </span>
+          <p className="mt-2 text-3xl font-black text-violet-700">
+            {upsellPct}%
+          </p>
+          <p className="mt-1 text-[10px] text-slate-400">revenue delta ÷ total revenue</p>
         </div>
       </div>
 

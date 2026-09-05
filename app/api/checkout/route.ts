@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
           unit_price: p.price,
         };
       })
-      .filter(Boolean);
+      .filter((x): x is NonNullable<typeof x> => x !== null);
 
     const { error: itemsErr } = await supabaseAdmin
       .from('order_items')

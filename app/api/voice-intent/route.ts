@@ -95,6 +95,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Detect Hindi / Hinglish input for multilingual response support
+    const lowerT = transcript.toLowerCase();
+    const isHindi =
+      /[\u0900-\u097F]/.test(transcript) ||
+      lowerT.includes('chahiye') ||
+      lowerT.includes('karo') ||
+      lowerT.includes('dikhao') ||
+      lowerT.includes('bhejo');
+
     // 1. Fetch entire product catalog for context / search tool implementation
     const { data: products } = await supabaseAdmin
       .from('products')
@@ -117,8 +126,8 @@ export async function POST(req: NextRequest) {
           const cat = p.category.toLowerCase();
           return name.includes(q) || cat.includes(q) || words.some(w => name.includes(w) || cat.includes(w));
         });
-
-        return {
+        
+        const result: { query: string; match_count: number; matches: Array<{ id: string; name: string; category: string; price_inr: number; replenishment_cycle_days: number }>; no_match?: boolean } = {
           query,
           match_count: matches.length,
           matches: matches.map(m => ({
@@ -126,9 +135,18 @@ export async function POST(req: NextRequest) {
             name: m.name,
             category: m.category,
             price_inr: m.price / 100,
-            replenishment_cycle_days: m.replenishment_cycle_days
+            replenishment_cycle_days: m.replenishment_cycle_days ?? 0
           }))
         };
+
+        
+        // Graceful failure: if no matches, set a friendly feedback flag
+        if (result.match_count === 0) {
+          // This will be used by the caller to generate a user‑friendly message
+          result.no_match = true;
+        }
+        
+        return result;
       },
 
       add_to_cart: ({ product_id, quantity = 1 }: { product_id: string; quantity?: number }) => {
@@ -276,7 +294,18 @@ INSTRUCTIONS:
                 step: 'search_results',
                 detail: `Found ${toolResult.match_count || 0} candidate item(s) matching "${toolArgs.query}"`
               });
-              if (toolResult.matches?.[0]) {
+              // Graceful no‑match handling
+              if (toolResult.no_match) {
+                const noMatchMsg = isHindi
+                  ? `क्षमा करें, "${toolArgs.query}" से कोई उत्पाद नहीं मिला। कोई अलग खोज आज़माएँ या कैटलॉग ब्राउज़ करें।`
+                  : `Sorry, I couldn't find anything matching "${toolArgs.query}". Try a different search or browse the catalog.`;
+                steps.push({ step: 'search_no_match', detail: noMatchMsg });
+                // Override feedback if not set later
+                agentAction.feedback_text = noMatchMsg;
+                // Prevent setting matched_product later
+                agentAction.matched_product = null;
+                agentAction.intent_type = 'search_no_match';
+              } else if (toolResult.matches?.[0]) {
                 agentAction.matched_product = catalogList.find(p => p.id === toolResult.matches[0].id) || null;
                 agentAction.intent_type = 'search';
               }
@@ -334,9 +363,35 @@ INSTRUCTIONS:
           }
         }
 
-        if (finalReplyText.trim()) {
-          agentAction.feedback_text = finalReplyText.trim();
+        // Ensure we always return some user‑facing feedback text
+        if (!finalReplyText.trim()) {
+          // Derive a sensible default based on the executed steps
+          const lastStep = steps[steps.length - 1];
+          if (lastStep) {
+            if (lastStep.step === 'search_no_match') {
+              finalReplyText = lastStep.detail; // friendly no‑match message already prepared
+            } else if (lastStep.step.startsWith('add_to_cart')) {
+              finalReplyText = isHindi
+                ? `आइटम कार्ट में जोड़ दिया गया है।`
+                : 'Item added to your cart.';
+            } else if (lastStep.step.startsWith('remove_from_cart')) {
+              finalReplyText = isHindi
+                ? `आइटम कार्ट से हटाया गया है।`
+                : 'Item removed from your cart.';
+            } else if (lastStep.step.startsWith('checkout')) {
+              finalReplyText = isHindi
+                ? `Razorpay चेकआउट प्रक्रिया शुरू की जा रही है...`
+                : 'Initiating Razorpay checkout...';
+            } else {
+              finalReplyText = isHindi
+                ? `आपकी अनुरोध को प्रोसेस किया गया है।`
+                : 'Your request has been processed.';
+            }
+          } else {
+            finalReplyText = isHindi ? 'आपकी अनुरोध को प्रोसेस किया गया है।' : 'Your request has been processed.';
+          }
         }
+        agentAction.feedback_text = finalReplyText.trim();
       } catch (err: any) {
         console.error('Gemini Tool Agent Execution Error:', err);
       }
@@ -345,7 +400,7 @@ INSTRUCTIONS:
     // High-level heuristic fallback if Gemini API key absent or unreached
     if (steps.length === 0) {
       const lowerTranscript = transcript.toLowerCase();
-      const isHindi = /[\u0900-\u097F]/.test(transcript) || lowerTranscript.includes('chahiye') || lowerTranscript.includes('karo') || lowerTranscript.includes('dikhao') || lowerTranscript.includes('bhejo');
+      
 
       if (lowerTranscript.includes('netbanking') || lowerTranscript.includes('checkout') || lowerTranscript.includes('pay') || lowerTranscript.includes('buy now') || lowerTranscript.includes('भुगतान')) {
         let pref = 'default';

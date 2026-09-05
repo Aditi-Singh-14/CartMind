@@ -23,6 +23,7 @@ export default function CheckoutPage() {
   const [agentReasoningSteps, setAgentReasoningSteps] = useState<Array<{ step: string; detail: string }>>([]);
   const [textQueryInput, setTextQueryInput] = useState<string>('');
   const [isAgentExecuting, setIsAgentExecuting] = useState<boolean>(false);
+  const [showTrace, setShowTrace] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Shipping Address Form State
@@ -262,8 +263,9 @@ export default function CheckoutPage() {
 
     try {
       setIsAgentExecuting(true);
-      setVoiceFeedback(`🤖 Agent reasoning for: "${transcript.trim()}"...`);
+      setVoiceFeedback(null);
       setAgentReasoningSteps([]);
+      setShowTrace(false);
 
       const cartProductIds = cart.map((item) => item.product.id);
 
@@ -359,40 +361,59 @@ export default function CheckoutPage() {
           </button>
         </form>
 
-        {/* Real-time Agent Reasoning Trace Box */}
-        {agentReasoningSteps.length > 0 && (
-          <div className="mt-4 rounded-xl border border-indigo-200 bg-white p-3.5 shadow-xs space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-900 border-b border-slate-100 pb-2">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
-                <span>Agent Tool Execution Trace</span>
-              </span>
-              <span className="font-mono text-[10px] text-slate-400">
-                {agentReasoningSteps.length} step(s)
-              </span>
-            </div>
+        {/* Agent response + collapsible trace */}
+        {(voiceFeedback || agentReasoningSteps.length > 0) && (
+          <div className="mt-4 rounded-xl border border-indigo-100 bg-white p-3.5 shadow-xs space-y-2">
+            {/* Final response — always visible */}
+            {voiceFeedback && (
+              <p className="text-xs font-semibold text-slate-800 flex items-start gap-2">
+                <span className="mt-0.5 text-base">🗣️</span>
+                <span>{voiceFeedback}</span>
+              </p>
+            )}
 
-            <div className="space-y-1.5 font-mono text-[11px]">
-              {agentReasoningSteps.map((step, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">
-                  <span className="font-bold text-blue-600">→</span>
-                  <div>
-                    <span className="font-bold text-slate-900">{step.step}:</span>{' '}
-                    <span className="text-slate-600">{step.detail}</span>
+            {/* Trace toggle — only shown if steps exist */}
+            {agentReasoningSteps.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowTrace((v) => !v)}
+                  className="text-[10px] font-semibold text-slate-400 hover:text-indigo-600 transition underline-offset-2 hover:underline mt-1"
+                >
+                  {showTrace ? 'Hide details ▲' : `Show details (${agentReasoningSteps.length} step${agentReasoningSteps.length !== 1 ? 's' : ''}) ▼`}
+                </button>
+
+                {showTrace && (
+                  <div className="mt-2 space-y-1.5 font-mono text-[11px]">
+                    {agentReasoningSteps.map((step, idx) => {
+                      const friendlyMap: Record<string, string> = {
+                        search_catalog: '🔍 Searching catalog...',
+                        search_results: step.detail.includes('Found 0')
+                          ? "🤝 No matches found."
+                          : `✅ ${step.detail}`,
+                        search_no_match: step.detail,
+                        add_to_cart: '🛒 Adding item to cart...',
+                        remove_from_cart: '🗑️ Removing item from cart...',
+                        get_recommendations: '🤖 Fetching AI recommendations...',
+                        initiate_checkout: '💳 Initiating checkout...',
+                        checkout_initiated: '💳 Checkout initiated.',
+                        cart_updated: step.detail,
+                        recommendations_retrieved: step.detail,
+                      };
+                      const display = friendlyMap[step.step] ?? `${step.step}: ${step.detail}`;
+                      return (
+                        <div key={idx} className="flex items-start gap-2 text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                          <span className="font-bold text-blue-500">→</span>
+                          <div>{display}</div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {voiceFeedback && (
-        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3.5 text-center text-xs font-semibold text-blue-700 animate-fade-in flex items-center justify-center gap-2">
-          <span>🗣️</span>
-          <span>{voiceFeedback}</span>
-        </div>
-      )}
 
       {error && (
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-600">
@@ -480,7 +501,7 @@ export default function CheckoutPage() {
           )}
         </div>
 
-        {/* Order Summary & Auto AI Recommendation Cards */}
+        {/* Order Summary & Smart AI Recommendation Cards */}
         <div className="lg:col-span-5 space-y-6">
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Order Summary</h3>
@@ -539,8 +560,8 @@ export default function CheckoutPage() {
               {actionLoadingId === 'direct_checkout' ? (
                 <>
                   <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                   <span>Opening Razorpay Checkout...</span>
                 </>
