@@ -52,9 +52,16 @@ export default function CheckoutPage() {
     fetchCustomer();
   }, []);
 
-  // Auto-fetch recommendations whenever cart changes (debounced by 400ms)
+  // Stable string key from cart contents — avoids infinite cancel/restart
+  // caused by the cart array getting a new reference on every CartContext render.
+  const cartKey = cart
+    .map((item) => `${item.product.id}:${item.quantity}`)
+    .sort()
+    .join(',');
+
+  // Auto-fetch recommendations whenever cart contents change (debounced 500ms)
   useEffect(() => {
-    if (cart.length === 0) {
+    if (!cartKey) {
       setRecList([]);
       return;
     }
@@ -73,6 +80,11 @@ export default function CheckoutPage() {
 
         const data = await res.json();
         if (!res.ok) {
+          // Surface auth errors so they're not silently swallowed
+          if (res.status === 401 || res.status === 403) {
+            console.warn('Recommendations require login:', data.error);
+            return; // Don't show error to customer, just skip
+          }
           throw new Error(data.error || 'Failed to fetch recommendations');
         }
 
@@ -80,16 +92,20 @@ export default function CheckoutPage() {
           setRecList(data.recommendations);
         } else if (data.candidate) {
           setRecList([data]);
+        } else {
+          setRecList([]);
         }
       } catch (err: any) {
         console.error('Auto-recommendation error:', err);
+        setRecList([]);
       } finally {
         setRecLoading(false);
       }
-    }, 400);
+    }, 500);
 
     return () => clearTimeout(timer);
-  }, [cart]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey]);
 
   // Open Razorpay hosted checkout modal with order details
   const triggerRazorpayCheckout = (orderData: any, decisionId: string | null, preferredMethod?: string) => {
