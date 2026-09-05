@@ -11,9 +11,11 @@ Track 01: AI Growth & Agentic Commerce
 
 ## What it solves
 
-Merchants want AI agents to grow revenue, but "let an AI touch checkout" is scary without guardrails. CartMind is an AI shopping agent that looks at a customer's cart and purchase history, proposes a bounded, explainable upsell or replenishment reminder, gets explicit human approval, and only then executes a real payment through **Razorpay's own MCP server** — not a REST wrapper pretending to be agentic commerce.
+Merchants want AI agents to grow revenue, but "let an AI touch checkout" is scary without guardrails and even if it works, there's no way to prove it's actually growing revenue rather than just adding noise to the cart. CartMind solves both halves of that problem.
 
-The agent is conversational (English + Hindi, text or voice), can search the catalog and build a cart from open-ended requests ("recommend me skincare with niacinamide," "netbanking se checkout karo"), and every decision it makes — recommended, bounded, approved, rejected — is logged to an audit trail a merchant can inspect.
+On the customer side, an AI shopping agent looks at the cart and purchase history, proposes a bounded, explainable upsell or replenishment reminder, gets explicit human approval, and only then executes a real payment through Razorpay's own MCP server, not a REST wrapper pretending to be agentic commerce. The agent is conversational (English + Hindi, text or voice), and can search the catalog and build a cart from open-ended requests ("recommend me skincare with niacinamide," "netbanking se checkout karo").
+
+On the merchant side, every decision the agent makes - recommended, bounded, approved, rejected is logged to an audit trail, and a dedicated Merchant Agent Audit Layer turns that log into the actual proof the track asks for: total revenue, how much of it came from AI-driven upsells, and a full decision trajectory showing exactly which recommendations passed or failed the safety bounds and why. A merchant doesn't have to trust that the agent is safe and effective, they can see it, decision by decision.
 
 ## Project structure
 
