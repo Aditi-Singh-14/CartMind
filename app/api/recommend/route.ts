@@ -1,25 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  rejectSpoofedCustomerId,
+  requireAuthenticatedCustomer,
+} from '@/lib/supabase/auth-helpers';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { getRecommendations } from '@/lib/recommendation/engine';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { customer_id, cart } = body;
+    const auth = await requireAuthenticatedCustomer(req);
+    if ('response' in auth) return auth.response;
+    const { customer } = auth;
 
-    if (!customer_id || !Array.isArray(cart)) {
+    const body = await req.json();
+    const { customer_id: bodyCustomerId, cart } = body;
+
+    const spoofRejection = rejectSpoofedCustomerId(
+      bodyCustomerId,
+      customer.id
+    );
+    if (spoofRejection) return spoofRejection;
+
+    if (!Array.isArray(cart)) {
       return NextResponse.json(
-        { error: 'Missing required fields: customer_id (string) and cart (array of product IDs)' },
+        { error: 'Missing required field: cart (array of product IDs)' },
         { status: 400 }
       );
     }
 
-    // Compute up to 3-4 recommendations via engine
+    const customer_id = customer.id;
+
     const recResults = await getRecommendations(customer_id, cart, 4);
 
     const loggedRecommendations = [];
 
-    // Log a separate agent_decisions row per candidate
     for (const recResult of recResults) {
       const { data: decisionRecord, error: logError } = await supabaseAdmin
         .from('agent_decisions')
@@ -32,7 +46,9 @@ export async function POST(req: NextRequest) {
           bound_check_passed: recResult.bound_check_passed,
           bound_check_rule: recResult.bound_check_rule,
           user_response: 'pending',
-          final_status: recResult.bound_check_passed ? 'recommended' : 'rejected_by_bounds'
+          final_status: recResult.bound_check_passed
+            ? 'recommended'
+            : 'rejected_by_bounds',
         })
         .select()
         .single();
@@ -47,25 +63,24 @@ export async function POST(req: NextRequest) {
         reasoning: recResult.reasoning,
         bound_check_passed: recResult.bound_check_passed,
         bound_check_rule: recResult.bound_check_rule,
-        decision_id: decisionRecord ? decisionRecord.id : null
+        decision_id: decisionRecord ? decisionRecord.id : null,
       });
     }
 
-    // Filter customer-facing response to ONLY include valid, passed recommendations
-    const customerRecommendations = loggedRecommendations.filter(r => r.bound_check_passed && r.candidate);
+    const customerRecommendations = loggedRecommendations.filter(
+      (r) => r.bound_check_passed && r.candidate
+    );
 
-    // Return primary candidate if available, otherwise null
     const primary = customerRecommendations[0] || null;
 
     return NextResponse.json({
       recommendations: customerRecommendations,
-      // Backward compatibility fields
       candidate: primary ? primary.candidate : null,
       signal_type: primary ? primary.signal_type : null,
       reasoning: primary ? primary.reasoning : '',
       bound_check_passed: primary ? primary.bound_check_passed : false,
       bound_check_rule: primary ? primary.bound_check_rule : '',
-      decision_id: primary ? primary.decision_id : null
+      decision_id: primary ? primary.decision_id : null,
     });
   } catch (err: any) {
     console.error('API /api/recommend Error:', err);

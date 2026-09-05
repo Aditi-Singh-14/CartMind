@@ -1,1 +1,4 @@
-{}
+{
+  "/api/decisions/[id]/respond/route": "app/api/decisions/[id]/respond/route.js",
+  "/api/recommend/route": "app/api/recommend/route.js"
+}

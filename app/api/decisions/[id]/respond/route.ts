@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuthenticatedCustomer } from '@/lib/supabase/auth-helpers';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { createOrderViaMcp } from '@/lib/mcp/razorpay';
 
@@ -7,9 +8,27 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireAuthenticatedCustomer(req);
+    if ('response' in auth) return auth.response;
+    const { customer } = auth;
+
     const decisionId = params.id;
     const body = await req.json();
-    const { response } = body;
+    const { response, customer_id: bodyCustomerId } = body;
+
+    if (
+      bodyCustomerId !== undefined &&
+      bodyCustomerId !== null &&
+      bodyCustomerId !== customer.id
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Forbidden: customer_id in request body does not match authenticated user',
+        },
+        { status: 403 }
+      );
+    }
 
     if (!response || !['approved', 'rejected'].includes(response)) {
       return NextResponse.json(
@@ -29,6 +48,16 @@ export async function POST(
       return NextResponse.json(
         { error: `Agent decision with ID '${decisionId}' not found.` },
         { status: 404 }
+      );
+    }
+
+    if (decision.customer_id !== customer.id) {
+      return NextResponse.json(
+        {
+          error:
+            'Forbidden: This recommendation does not belong to the authenticated customer',
+        },
+        { status: 403 }
       );
     }
 

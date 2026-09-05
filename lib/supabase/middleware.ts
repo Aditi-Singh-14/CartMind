@@ -42,6 +42,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith('/api/audit') ||
     path.startsWith('/api/recommend') ||
     path.startsWith('/api/decisions') ||
+    path.startsWith('/api/checkout') ||
     path.startsWith('/_next') ||
     path.includes('/favicon.ico');
 

@@ -63,32 +63,11 @@ export default function CheckoutPage() {
       setError(null);
 
       try {
-        let custId = customer?.id;
-        if (!custId) {
-          const { data: authData } = await supabaseClient.auth.getUser();
-          if (authData.user) {
-            const { data: cust } = await supabaseClient
-              .from('customers')
-              .select('id, name')
-              .eq('user_id', authData.user.id)
-              .single();
-            if (cust) {
-              setCustomer(cust);
-              custId = cust.id;
-            }
-          }
-        }
-
-        if (!custId) return;
-
         const cartProductIds = cart.map((item) => item.product.id);
         const res = await fetch('/api/recommend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: custId,
-            cart: cartProductIds,
-          }),
+          body: JSON.stringify({ cart: cartProductIds }),
         });
 
         const data = await res.json();
@@ -109,10 +88,10 @@ export default function CheckoutPage() {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [cart, customer]);
+  }, [cart]);
 
   // Open Razorpay hosted checkout modal with order details
-  const triggerRazorpayCheckout = (orderData: any, decisionId: string, preferredMethod?: string) => {
+  const triggerRazorpayCheckout = (orderData: any, decisionId: string | null, preferredMethod?: string) => {
     const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_TXglYk7R8hvP5j';
 
     const options: any = {
@@ -224,54 +203,15 @@ export default function CheckoutPage() {
   const handleDirectCheckout = async (preferredMethod?: string) => {
     if (cart.length === 0) return;
 
-    let custId = customer?.id;
-    if (!custId) {
-      const { data: authData } = await supabaseClient.auth.getUser();
-      if (authData.user) {
-        const { data: cust } = await supabaseClient
-          .from('customers')
-          .select('id, name')
-          .eq('user_id', authData.user.id)
-          .single();
-        if (cust) {
-          setCustomer(cust);
-          custId = cust.id;
-        }
-      }
-    }
-
-    if (!custId) {
-      setError('Customer account not found. Please log in again.');
-      return;
-    }
-
     setActionLoadingId('direct_checkout');
     setError(null);
 
     try {
-      // Create a dummy/direct recommendation decision record in Supabase agent_decisions
       const cartProductIds = cart.map((item) => item.product.id);
-      const recRes = await fetch('/api/recommend', {
+      const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: custId,
-          cart: cartProductIds,
-        }),
-      });
-
-      const recData = await recRes.json();
-      const decisionId = recData.decision_id || (recData.recommendations && recData.recommendations[0]?.decision_id);
-
-      if (!decisionId) {
-        throw new Error('Failed to initialize checkout session decision.');
-      }
-
-      // Approve decision to create Razorpay MCP order
-      const res = await fetch(`/api/decisions/${decisionId}/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: 'approved' }),
+        body: JSON.stringify({ cart: cartProductIds }),
       });
 
       const data = await res.json();
@@ -279,8 +219,7 @@ export default function CheckoutPage() {
         throw new Error(data.error || 'Checkout process failed.');
       }
 
-      // Launch Razorpay Hosted Checkout interface
-      triggerRazorpayCheckout(data, decisionId, preferredMethod);
+      triggerRazorpayCheckout(data, null, preferredMethod);
     } catch (err: any) {
       setError(err.message);
       setActionLoadingId(null);
@@ -334,7 +273,6 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           transcript: transcript.trim(),
           cart: cartProductIds,
-          customer_id: customer?.id
         }),
       });
 
