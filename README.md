@@ -8,6 +8,7 @@ Track 01: AI Growth & Agentic Commerce
  
 - **Live app**: https://cart-mind-sepia.vercel.app
 - **GitHub repo**: https://github.com/Aditi-Singh-14/CartMind
+- **Pitch Video**: https://youtu.be/INAPdTuQwmE
 
 ## What it solves
 
